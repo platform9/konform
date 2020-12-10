@@ -1,6 +1,7 @@
 package pf9
 
 import (
+	"io/ioutil"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -61,6 +62,10 @@ func resourcePf9AWSCloudProvider() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
+			"nodepooluuid": &schema.Schema{
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 		},
 	}
 }
@@ -106,7 +111,6 @@ func resourcePf9AWSCloudProviderCreate(d *schema.ResourceData, meta interface{})
 	json.NewDecoder(resp.Body).Decode(&respData)
 
 	d.SetId(respData.UUID)
-
 	return resourcePf9AWSCloudProviderRead(d, meta)
 }
 
@@ -132,7 +136,40 @@ func resourcePf9AWSCloudProviderRead(d *schema.ResourceData, meta interface{}) e
 	if errResp != nil {
 		return fmt.Errorf("AWS Cloud Provider get failed: %s", errResp)
 	}
+        qbertNodePoolGetAPI := "https://" + config.DuFQDN + "/qbert/v3/" + d.Get("project_uuid").(string) + "/nodePools"
+		req2, errReq := http.NewRequest("GET", qbertNodePoolGetAPI, nil)
+		if errReq != nil {
+			return fmt.Errorf("Aws Node Pool get failed: %s", errReq)
+		}
+		req2.Header.Add("X-Auth-Token", token)
+		req2.Header.Add("Content-Type", "application/json")
+		resp, errResp := client.Do(req2)
+		if errResp != nil {
+			return fmt.Errorf("AWS Noode Pool get fialed: %s", errResp)
+		}
+		defer resp.Body.Close()
 
+		respData, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("Error %s", err)
+		}
+
+		type nodePoolStruct struct {
+			NodePoolUuid string `json:"uuid"`
+			CloudProviderUuid string `json:"cloudProviderUuid"` 
+		}
+
+		var x []*nodePoolStruct
+
+		err2 := json.Unmarshal(respData, &x)
+		if err2 != nil {
+			return fmt.Errorf("Error %s", err2)
+	}
+	for _, v := range x {
+	    if v.CloudProviderUuid == cloudProviderUUID {
+		d.Set("nodepooluuid", v.NodePoolUuid)
+	    }
+	}
 	return nil
 
 }
